@@ -1,0 +1,41 @@
+python startup.py || exit 1
+
+if [ "$CALICO_DISABLE_FILE_LOGGING" = "true" ]; then
+	rm -r /etc/service/bird/log
+	rm -r /etc/service/bird6/log
+	rm -r /etc/service/confd/log
+	rm -r /etc/service/felix/log
+fi
+
+if [ "$CALICO_NETWORKING" = "false" ]; then
+	# If running in policy only mode, we don't need to run BIRD / Confd.
+	echo "CALICO_NETWORKING is false - disable BIRD and Confd"
+	rm -r /etc/service/bird
+	rm -r /etc/service/bird6
+	rm -r /etc/service/confd
+else
+    # Run Confd in onetime mode, to ensure that we have a working config in place to allow bird(s) and
+    # felix to start.  Don't fail startup if this confd execution fails.
+    #
+    # First generate the BIRD aggregation TOML file from the template by
+    # switching out the hostname.
+    sed "s/HOSTNAME/$HOSTNAME/" /etc/calico/confd/templates/bird_aggr.toml.template > /etc/calico/confd/conf.d/bird_aggr.toml
+    sed "s/HOSTNAME/$HOSTNAME/" /etc/calico/confd/templates/bird6_aggr.toml.template > /etc/calico/confd/conf.d/bird6_aggr.toml
+
+    # Run confd twice.  Our confd TOML files are also generated from confd, so
+    # running twice ensures our starting configuration is correct.
+    # Use ETCD_ENDPOINTS in preferences to ETCD_AUTHORITY
+    ETCD_NODE=${ETCD_ENDPOINTS:=${ETCD_SCHEME:=http}://${ETCD_AUTHORITY}}
+
+    # confd needs a "-node" arguments for each etcd endpoint.
+    ETCD_ENDPOINTS_CONFD=`echo "-node=$ETCD_NODE" | sed -e 's/,/ -node=/g'`
+
+    confd -confdir=/etc/calico/confd -onetime ${ETCD_ENDPOINTS_CONFD} \
+          -client-key=${ETCD_KEY_FILE} -client-cert=${ETCD_CERT_FILE} \
+          -client-ca-keys=${ETCD_CA_CERT_FILE} -keep-stage-file >/felix-startup-1.log 2>&1 || true
+    confd -confdir=/etc/calico/confd -onetime ${ETCD_ENDPOINTS_CONFD} \
+          -client-key=${ETCD_KEY_FILE} -client-cert=${ETCD_CERT_FILE} \
+          -client-ca-keys=${ETCD_CA_CERT_FILE} -keep-stage-file >/felix-startup-2.log 2>&1 || true
+fi
+
+echo "Calico node started successfully"
