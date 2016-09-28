@@ -16,6 +16,7 @@ FROM ppc64le/ubuntu
 ENV GLIBC_VERSION 2.23-r1
 
 # Download and install glibc for use by the startup script
+ADD bird* /sbin/
 ADD build.sh /build.sh
 RUN /build.sh # 23MAR2016
 RUN apt-get update && apt-get -y  install vim
@@ -25,5 +26,5 @@ RUN apt-get -y install runit
 ADD start_runit /sbin/
 COPY filesystem /
 COPY restart-calico-confd /usr/local/bin/
-
+ADD confd /sbin/
 CMD ["/sbin/start_runit"]

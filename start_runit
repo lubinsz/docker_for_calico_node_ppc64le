@@ -11,4 +11,6 @@ then
 fi
 
 # Source any additional environment that was added by the startup script
+. /startup.env
+
 exec runsvdir -P /etc/service
